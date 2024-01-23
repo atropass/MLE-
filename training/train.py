@@ -10,8 +10,10 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+import logging
+from sklearn.metrics import classification_report
 
-# Comment this line if you have problems with MLFlow installation
+
 import mlflow
 
 mlflow.autolog()
@@ -21,7 +23,7 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(ROOT_DIR))
 
 # Change to CONF_FILE = "settings.json" if you have problems with env variables
-CONF_FILE = os.getenv("CONF_PATH")
+CONF_FILE = "settings.json"
 
 from utils import get_project_dir, configure_logging
 
@@ -79,22 +81,26 @@ def train(model, criterion, optimizer, data_loader):
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            logging.info(f"Epoch {epoch+1}/{num_epochs} completed.")
 
 
 def evaluate(model, data_loader):
     model.eval()
-    correct = 0
-    total = 0
+    all_labels = []
+    all_preds = []
     with torch.no_grad():
         for features, labels in data_loader:
             outputs = model(features)
             _, predicted = torch.max(outputs, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    return correct / total
+            all_labels.extend(labels.tolist())
+            all_preds.extend(predicted.tolist())
+    return all_labels, all_preds
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     (X_train, y_train), (X_test, y_test) = prepare_data(TRAIN_PATH)
 
     train_dataset = TensorDataset(X_train, y_train)
@@ -109,15 +115,16 @@ def main():
 
     train(model, criterion, optimizer, train_loader)
 
-    accuracy = evaluate(model, test_loader)
-    print(f"Test Accuracy: {accuracy:.4f}")
-
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
 
     model_path = os.path.join(MODEL_DIR, "pytorch_model.pth")
     torch.save(model.state_dict(), model_path)
-
+    y_true, y_pred = evaluate(model, test_loader)
+    report = classification_report(
+        y_true, y_pred, target_names=["Class 0", "Class 1", "Class 2"]
+    )
+    logging.info(f"\nClassification Report:\n{report}")
     print(f"Model saved to {model_path}")
 
 
